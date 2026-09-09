@@ -3,83 +3,74 @@ import re
 from pathlib import Path
 
 configfile: "config.yaml"
+R1_PATTERNS = [
+    r'^(.*)(_1)(\.fq|\.fastq)(\.gz)?$',
+    r'^(.*)(_R1_001)(\.fq|\.fastq)(\.gz)?$',
+    r'^(.*)(_R1)(\.fq|\.fastq)(\.gz)?$',
+    r'^(.*)(\.1)(\.fq|\.fastq)(\.gz)?$',
+]
 
-# --- Robust Sample Discovery ---
+R2_PATTERNS = [
+    r'^(.*)(_2)(\.fq|\.fastq)(\.gz)?$',
+    r'^(.*)(_R2_001)(\.fq|\.fastq)(\.gz)?$',
+    r'^(.*)(_R2)(\.fq|\.fastq)(\.gz)?$',
+    r'^(.*)(\.2)(\.fq|\.fastq)(\.gz)?$',
+]
+
+PE_REGEXES = [re.compile(p) for p in (*R1_PATTERNS, *R2_PATTERNS)]
+
+FASTQ_EXTENSIONS = (
+    ".fq",
+    ".fastq",
+    ".fq.gz",
+    ".fastq.gz",
+)
+
+
+def get_prefix(filename):
+    """Return sample prefix for PE or SE filename."""
+    for rx in PE_REGEXES:
+        m = rx.match(filename)
+        if m:
+            return m.group(1)
+
+    for ext in sorted(FASTQ_EXTENSIONS, key=len, reverse=True):
+        if filename.endswith(ext):
+            return filename[:-len(ext)]
+
+    return None
+
+
 def discover_samples(sampledir_path):
     sampledir = Path(sampledir_path)
     samples = {}
-    
-    # Common extensions for FASTQ files
-    extensions = {".fq.gz", ".fastq.gz", ".fq", ".fastq"}
-    
-    # Patterns to identify paired-end mates (R1/1 and R2/2)
-    pe_patterns = [
-        r'^(.*)(_1)(\.fq|\.fastq)(\.gz)?$',
-        r'^(.*)(_R1_001)(\.fq|\.fastq)(\.gz)?$',
-        r'^(.*)(_R1)(\.fq|\.fastq)(\.gz)?$',
-        r'^(.*)(\.1)(\.fq|\.fastq)(\.gz)?$',
-    ]
-    
-    pe2_patterns = [
-        r'^(.*)(_2)(\.fq|\.fastq)(\.gz)?$',
-        r'^(.*)(_R2_001)(\.fq|\.fastq)(\.gz)?$',
-        r'^(.*)(_R2)(\.fq|\.fastq)(\.gz)?$',
-        r'^(.*)(\.2)(\.fq|\.fastq)(\.gz)?$',
-    ]
-    
-    for root, dirs, files in os.walk(sampledir):
-        for f in files:
-            if not any(f.endswith(ext) for ext in extensions):
+
+    for root, _, files in os.walk(sampledir):
+        rel_dir = Path(root).relative_to(sampledir)
+
+        for filename in files:
+            prefix = get_prefix(filename)
+            if prefix is None:
                 continue
-                
-            is_pe = False
-            prefix = f
-            
-            # Check if it matches R1 patterns
-            for pattern in pe_patterns:
-                m = re.match(pattern, f)
-                if m:
-                    prefix = m.group(1)
-                    is_pe = True
-                    break
-            
-            # If not matched as R1, check if it matches R2 patterns
-            if not is_pe:
-                for pattern in pe2_patterns:
-                    m = re.match(pattern, f)
-                    if m:
-                        prefix = m.group(1)
-                        is_pe = True
-                        break
-            
-            # If still not matched, treat as single-end
-            if not is_pe:
-                for ext in sorted(extensions, key=len, reverse=True):
-                    if f.endswith(ext):
-                        prefix = f[:-len(ext)]
-                        break
-            
-            # Calculate relative path to maintain directory structure
-            rel_dir = Path(root).relative_to(sampledir)
-            
-            # De-duplicate folder name if it matches prefix (e.g., 4100/4100_1.fq.gz -> 4100)
+
             if rel_dir.name == prefix:
                 sample_id = str(rel_dir)
             else:
-                sample_id = str(rel_dir / prefix) if str(rel_dir) != "." else prefix
-                
-            if sample_id not in samples:
-                samples[sample_id] = []
-                
-            abs_path = os.path.join(root, f)
-            if abs_path not in samples[sample_id]:
-                samples[sample_id].append(abs_path)
-                
-    # Sort files to ensure R1 comes before R2
-    for sample_id in samples:
-        samples[sample_id].sort()
-        
+                sample_id = (
+                    prefix
+                    if rel_dir == Path(".")
+                    else str(rel_dir / prefix)
+                )
+
+            samples.setdefault(sample_id, []).append(
+                str(Path(root) / filename)
+            )
+
+    for files in samples.values():
+        files.sort()
+
     return samples
+
 
 # Initialize parameters
 SAMPLEDIR = Path(config["sampledir"])
