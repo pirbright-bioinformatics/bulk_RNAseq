@@ -1,0 +1,40 @@
+# RNAseq Pipeline Configuration
+
+# The root directory where your raw FASTQ files are located.
+# The pipeline will recursively search this directory for FASTQ files.
+# Each leaf directory containing FASTQ files is treated as a sample.
+# The directory structure under this root will be replicated in the output.
+sampledir: data/
+
+# The trimming method to use:
+# - "fastp" (highly recommended)
+# - "fastq_quality_trimmer"
+qctype: fastp
+
+# Path to the adapter FASTA file (used by fastp)
+adapters: adapters.fa
+
+# Trimming parameters
+trimmer:
+  minlen: 90
+
+# Output directory for QC and trimming results
+outdir: results/
+
+# Kallisto Quantification Parameters
+kallisto:
+  # The directory containing trimmed FASTQ files.
+  # This should point to {outdir}/{qctype} from the QC step.
+  sampledir: results/fastp/
+  
+  # Path to the Kallisto index
+  index: index/index.idx
+  
+  # Output directory for Kallisto results
+  outdir: results/kallisto/
+  
+  # Single-End Parameters (Only used for detected single-end samples)
+  # - fragment_len: Estimated average fragment length
+  # - sd: Standard deviation of fragment length
+  fragment_len: 200
+  sd: 20
